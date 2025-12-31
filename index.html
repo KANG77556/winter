@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <title>출석 인증</title>
+  <!-- 카카오 SDK -->
   <script src="https://developers.kakao.com/sdk/js/kakao.js"></script>
 </head>
 <body style="text-align:center; margin-top:80px; font-family:system-ui;">
   <h2>방학 중 출석 인증</h2>
   <p>카카오톡 로그인을 완료하면 출석 폼으로 이동합니다.</p>
-
   <button onclick="kakaoLogin()" style="font-size:18px; padding:14px 18px;">
     카카오톡으로 출석하기
   </button>
 
   <script>
-    // 🔑 카카오 JavaScript 키 입력
-    Kakao.init("b58f46a6115bba3eb02e991769a7e69e");
+    // 🔑 ① 여기에 "JavaScript 키" 정확히 넣기
+    //    (카카오 개발자 콘솔 > 앱 키 > JavaScript 키)
+    Kakao.init("여기에_카카오_JavaScript_키"); 
 
     function kakaoLogin() {
       Kakao.Auth.login({
@@ -25,14 +26,18 @@
             url: "/v2/user/me",
             success: function (res) {
               const nickname =
-                res?.kakao_account?.profile?.nickname || "";
+                (res && res.kakao_account &&
+                 res.kakao_account.profile &&
+                 res.kakao_account.profile.nickname) || "";
 
-              // ✅ 당신의 구글폼 정보 (확정)
+              // ✅ ② 구글폼 기본 주소 (이미 확정된 값)
               const formBase =
                 "https://docs.google.com/forms/d/e/1FAIpQLSdCOqdWKL6r0160jsPTJcqQfg4bVyt7M4Y56L3uHJy7CVKqZA/viewform";
 
+              // ✅ ③ 이름 질문 entry 번호 (이미 확정된 값)
               const nameEntry = "entry.354885157";
 
+              // ✅ ④ 이름에 카카오 닉네임 자동 채워서 폼으로 이동
               const url =
                 formBase +
                 "?" +
@@ -40,17 +45,18 @@
                 "=" +
                 encodeURIComponent(nickname);
 
-              // 구글폼으로 이동
               window.location.href = url;
             },
+            fail: function (err) {
+              alert("사용자 정보 조회 실패: " + JSON.stringify(err));
+            }
           });
         },
         fail: function (err) {
           alert("카카오 로그인 실패: " + JSON.stringify(err));
-        },
+        }
       });
     }
   </script>
 </body>
 </html>
-
