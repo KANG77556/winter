@@ -17,10 +17,11 @@
     // 🔑 ① 여기에 "JavaScript 키" 정확히 넣기
     //    (카카오 개발자 콘솔 > 앱 키 > JavaScript 키)
     Kakao.init("d15c7a7cc7ba04cf3cf77600d8256162");
-
+    redirectUri: "https://kang77556.github.io/winter/",  //
     function kakaoLogin() {
       Kakao.Auth.login({
         scope: "profile_nickname",
+        
         success: function () {
           Kakao.API.request({
             url: "/v2/user/me",
@@ -60,4 +61,5 @@
   </script>
 </body>
 </html>
+
 
