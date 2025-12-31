@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>출석 인증</title>
+  <script src="https://developers.kakao.com/sdk/js/kakao.js"></script>
+</head>
+<body style="text-align:center; margin-top:80px; font-family:system-ui;">
+  <h2>방학 중 출석 인증</h2>
+  <p>카카오톡 로그인을 완료하면 출석 폼으로 이동합니다.</p>
+
+  <button onclick="kakaoLogin()" style="font-size:18px; padding:14px 18px;">
+    카카오톡으로 출석하기
+  </button>
+
+  <script>
+    // 🔑 카카오 JavaScript 키 입력
+    Kakao.init("여기에_카카오_JavaScript_키");
+
+    function kakaoLogin() {
+      Kakao.Auth.login({
+        scope: "profile_nickname",
+        success: function () {
+          Kakao.API.request({
+            url: "/v2/user/me",
+            success: function (res) {
+              const nickname =
+                res?.kakao_account?.profile?.nickname || "";
+
+              // ✅ 당신의 구글폼 정보 (확정)
+              const formBase =
+                "https://docs.google.com/forms/d/e/1FAIpQLSdCOqdWKL6r0160jsPTJcqQfg4bVyt7M4Y56L3uHJy7CVKqZA/viewform";
+
+              const nameEntry = "entry.354885157";
+
+              const url =
+                formBase +
+                "?" +
+                nameEntry +
+                "=" +
+                encodeURIComponent(nickname);
+
+              // 구글폼으로 이동
+              window.location.href = url;
+            },
+          });
+        },
+        fail: function (err) {
+          alert("카카오 로그인 실패: " + JSON.stringify(err));
+        },
+      });
+    }
+  </script>
+</body>
+</html>
