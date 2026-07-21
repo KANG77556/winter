@@ -1,4 +1,4 @@
-name: Vintage Camera 3.0 APK
+name: Vintage Camera 3.0.1 Install Fix APK
 
 on:
   workflow_dispatch:
@@ -65,6 +65,19 @@ jobs:
           test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
           test -f "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java"
 
+      - name: Apply install compatibility package
+        shell: bash
+        run: |
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
+          BUILD_FILE="$PROJECT_DIR/app/build.gradle.kts"
+          MANIFEST_FILE="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          sed -i 's/applicationId = "kr.co.vintagecolor.camera"/applicationId = "kr.co.vintagecolor.camera.installfix"/' "$BUILD_FILE"
+          sed -i 's/versionCode = 5/versionCode = 6/' "$BUILD_FILE"
+          sed -i 's/versionName = "3.0.0"/versionName = "3.0.1"/' "$BUILD_FILE"
+          sed -i 's/android:label="빈티지 컬러 카메라"/android:label="빈티지 컬러 카메라 3"/' "$MANIFEST_FILE"
+          grep -q 'applicationId = "kr.co.vintagecolor.camera.installfix"' "$BUILD_FILE"
+          grep -q 'versionName = "3.0.1"' "$BUILD_FILE"
+
       - name: Build debug APK
         working-directory: restored-source/VintageColorCamera-v3.0.0-source
         run: gradle --no-daemon --stacktrace :app:assembleDebug
@@ -73,14 +86,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifact
-          cp restored-source/VintageColorCamera-v3.0.0-source/app/build/outputs/apk/debug/app-debug.apk artifact/VintageColorCamera-v3.0.0-debug.apk
-          sha256sum artifact/VintageColorCamera-v3.0.0-debug.apk > artifact/SHA256SUMS.txt
+          cp restored-source/VintageColorCamera-v3.0.0-source/app/build/outputs/apk/debug/app-debug.apk artifact/VintageColorCamera-v3.0.1-install-fix.apk
+          sha256sum artifact/VintageColorCamera-v3.0.1-install-fix.apk > artifact/SHA256SUMS.txt
           cp vintage-camera-app/VintageColorCamera-v3.0.0-source.zip artifact/
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VintageColorCamera-v3-debug-apk
+          name: VintageColorCamera-v3.0.1-install-fix
           path: artifact/
           if-no-files-found: error
           retention-days: 30
