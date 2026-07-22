@@ -1,0 +1,140 @@
+name: Vintage Camera 3.2.1 Rotation Fix APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vintage-camera-v3
+    paths:
+      - "vintage-camera-app/patches/v321/**"
+      - ".github/workflows/vintage-camera-v321-rotation-fix.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "vintage-camera-app/patches/v321/**"
+      - ".github/workflows/vintage-camera-v321-rotation-fix.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-v321-rotation-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore base source
+        shell: bash
+        run: |
+          chmod +x vintage-camera-app/reconstruct-source.sh
+          bash vintage-camera-app/reconstruct-source.sh
+          rm -rf restored-source
+          mkdir restored-source
+          unzip -q vintage-camera-app/VintageColorCamera-v3.0.0-source.zip -d restored-source
+
+      - name: Apply 3.1 diagnostics
+        shell: bash
+        run: |
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
+          python3 vintage-camera-app/patches/v31/apply_v31_diagnostics.py \
+            "$PROJECT_DIR" "vintage-camera-app/patches/v31"
+          test -f "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/CameraDiagnostics.java"
+
+      - name: Apply 3.2 lens patch
+        shell: bash
+        run: |
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
+          cat vintage-camera-app/patches/v32/part_*.patch > /tmp/v32-final.patch
+          cd "$PROJECT_DIR"
+          patch -p1 < /tmp/v32-final.patch
+          grep -q 'applicationId = "kr.co.vintagecolor.camera.s24final"' app/build.gradle.kts
+          grep -q 'versionName = "3.2.0"' app/build.gradle.kts
+
+      - name: Apply 3.2.1 orientation fix
+        shell: bash
+        run: |
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
+          python3 vintage-camera-app/patches/v321/apply_v321_rotation_fix.py "$PROJECT_DIR"
+          grep -q 'applicationId = "kr.co.vintagecolor.camera.s24stable"' "$PROJECT_DIR/app/build.gradle.kts"
+          grep -q 'versionCode = 9' "$PROJECT_DIR/app/build.gradle.kts"
+          grep -q 'versionName = "3.2.1"' "$PROJECT_DIR/app/build.gradle.kts"
+          grep -q 'normalizeCapturedBitmap' "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/CameraController.java"
+          grep -q 'ExifInterface.TAG_ORIENTATION' "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/CameraController.java"
+
+      - name: Install stable signing key
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.android"
+          base64 --decode vintage-camera-app/patches/v321/vintage-stable-debug.keystore.b64 \
+            > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android \
+            -alias androiddebugkey >/dev/null
+
+      - name: Build stable APK
+        working-directory: restored-source/VintageColorCamera-v3.0.0-source
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Verify APK metadata and signature
+        shell: bash
+        run: |
+          APK="restored-source/VintageColorCamera-v3.0.0-source/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee apk-badging.txt
+          grep -q "package: name='kr.co.vintagecolor.camera.s24stable'" apk-badging.txt
+          grep -q "versionCode='9'" apk-badging.txt
+          grep -q "versionName='3.2.1'" apk-badging.txt
+          grep -q "launchable-activity: name='kr.co.vintagecolor.camera.MainActivity'" apk-badging.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" \
+            | tee apk-signature.txt
+
+      - name: Prepare release package
+        shell: bash
+        run: |
+          mkdir -p artifact
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" \
+             artifact/VintageColorCamera-v3.2.1-Rotation-Fix.apk
+          cp apk-badging.txt artifact/
+          cp apk-signature.txt artifact/
+          cp "$PROJECT_DIR/README_KO.md" artifact/
+          cp "$PROJECT_DIR/CHANGELOG_KO.md" artifact/
+          cp "$PROJECT_DIR/S24_DIAGNOSTICS_KO.md" artifact/
+          sha256sum artifact/VintageColorCamera-v3.2.1-Rotation-Fix.apk \
+            > artifact/SHA256SUMS.txt
+          (cd restored-source && zip -qr ../artifact/VintageColorCamera-v3.2.1-source.zip \
+            VintageColorCamera-v3.0.0-source \
+            -x '*/build/*' '*/.gradle/*')
+
+      - name: Upload rotation fix package
+        uses: actions/upload-artifact@v4
+        with:
+          name: VintageColorCamera-v3.2.1-Rotation-Fix
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 30
