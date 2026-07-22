@@ -84,16 +84,18 @@ jobs:
           grep -q 'versionName = "3.2.1"' "$PROJECT_DIR/app/build.gradle.kts"
           grep -q 'normalizeCapturedBitmap' "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/CameraController.java"
           grep -q 'ExifInterface.TAG_ORIENTATION' "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/CameraController.java"
+          grep -q 'create("stableDebug")' "$PROJECT_DIR/app/build.gradle.kts"
 
       - name: Install stable signing key
         shell: bash
         run: |
-          mkdir -p "$HOME/.android"
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
           base64 --decode vintage-camera-app/patches/v321/vintage-stable-debug.keystore.b64 \
-            > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android \
-            -alias androiddebugkey >/dev/null
+            > "$PROJECT_DIR/app/vintage-stable-debug.keystore"
+          chmod 600 "$PROJECT_DIR/app/vintage-stable-debug.keystore"
+          keytool -list -storetype PKCS12 \
+            -keystore "$PROJECT_DIR/app/vintage-stable-debug.keystore" \
+            -storepass android -alias androiddebugkey >/dev/null
 
       - name: Build stable APK
         working-directory: restored-source/VintageColorCamera-v3.0.0-source
@@ -112,6 +114,7 @@ jobs:
           grep -q "launchable-activity: name='kr.co.vintagecolor.camera.MainActivity'" apk-badging.txt
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" \
             | tee apk-signature.txt
+          grep -q "Signer #1 certificate SHA-256 digest: 432a68331ca5efece82e5997b1784edce3045dffc9e9fb0c739a0d540d9df9af" apk-signature.txt
 
       - name: Prepare release package
         shell: bash
@@ -129,7 +132,7 @@ jobs:
             > artifact/SHA256SUMS.txt
           (cd restored-source && zip -qr ../artifact/VintageColorCamera-v3.2.1-source.zip \
             VintageColorCamera-v3.0.0-source \
-            -x '*/build/*' '*/.gradle/*')
+            -x '*/build/*' '*/.gradle/*' '*/vintage-stable-debug.keystore')
 
       - name: Upload rotation fix package
         uses: actions/upload-artifact@v4
