@@ -1,0 +1,99 @@
+name: Vintage Camera 3.0.1 Install Fix APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - vintage-camera-v3
+    paths:
+      - "vintage-camera-app/**"
+      - ".github/workflows/vintage-camera-v3.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "vintage-camera-app/**"
+      - ".github/workflows/vintage-camera-v3.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Restore source archive
+        shell: bash
+        run: |
+          chmod +x vintage-camera-app/reconstruct-source.sh
+          bash vintage-camera-app/reconstruct-source.sh
+          rm -rf restored-source
+          mkdir restored-source
+          unzip -q vintage-camera-app/VintageColorCamera-v3.0.0-source.zip -d restored-source
+
+      - name: Verify project files
+        shell: bash
+        run: |
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+          test -f "$PROJECT_DIR/app/build.gradle.kts"
+          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          test -f "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java"
+
+      - name: Apply install compatibility package
+        shell: bash
+        run: |
+          PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
+          BUILD_FILE="$PROJECT_DIR/app/build.gradle.kts"
+          MANIFEST_FILE="$PROJECT_DIR/app/src/main/AndroidManifest.xml"
+          sed -i 's/applicationId = "kr.co.vintagecolor.camera"/applicationId = "kr.co.vintagecolor.camera.installfix"/' "$BUILD_FILE"
+          sed -i 's/versionCode = 5/versionCode = 6/' "$BUILD_FILE"
+          sed -i 's/versionName = "3.0.0"/versionName = "3.0.1"/' "$BUILD_FILE"
+          sed -i 's/android:label="빈티지 컬러 카메라"/android:label="빈티지 컬러 카메라 3"/' "$MANIFEST_FILE"
+          grep -q 'applicationId = "kr.co.vintagecolor.camera.installfix"' "$BUILD_FILE"
+          grep -q 'versionName = "3.0.1"' "$BUILD_FILE"
+
+      - name: Build debug APK
+        working-directory: restored-source/VintageColorCamera-v3.0.0-source
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          mkdir -p artifact
+          cp restored-source/VintageColorCamera-v3.0.0-source/app/build/outputs/apk/debug/app-debug.apk artifact/VintageColorCamera-v3.0.1-install-fix.apk
+          sha256sum artifact/VintageColorCamera-v3.0.1-install-fix.apk > artifact/SHA256SUMS.txt
+          cp vintage-camera-app/VintageColorCamera-v3.0.0-source.zip artifact/
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VintageColorCamera-v3.0.1-install-fix
+          path: artifact/
+          if-no-files-found: error
+          retention-days: 30

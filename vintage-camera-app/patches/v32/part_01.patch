@@ -1,0 +1,128 @@
+BackCameraId;
++            if (preferredBackCameraId != null) return preferredBackCameraId;
++        }
++
+         int wanted = front ? CameraCharacteristics.LENS_FACING_FRONT : CameraCharacteristics.LENS_FACING_BACK;
+         String bestId = null;
+         int bestScore = Integer.MIN_VALUE;
+@@ -260,29 +349,150 @@
+             CameraCharacteristics c = cameraManager.getCameraCharacteristics(ids[i]);
+             Integer facing = c.get(CameraCharacteristics.LENS_FACING);
+             if (facing == null || facing.intValue() != wanted) continue;
+-            int score = 0;
+-            int[] caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
+-            if (caps != null) {
+-                for (int j = 0; j < caps.length; j++) {
+-                    if (Build.VERSION.SDK_INT >= 28 &&
+-                            caps[j] == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) {
+-                        score += 100;
++            int score = cameraScore(c);
++            if (score > bestScore) {
++                bestScore = score;
++                bestId = ids[i];
++            }
++        }
++        return bestId;
++    }
++
++    /** 기기에 공개된 후면 카메라를 분석해 목표 배율별 후보를 계산합니다. */
++    private void scanBackLensCandidates() {
++        backLensCandidates.clear();
++        preferredBackCameraId = null;
++        globalMinZoomRatio = 1f;
++        globalMaxZoomRatio = 1f;
++        try {
++            String[] ids = cameraManager.getCameraIdList();
++            int bestScore = Integer.MIN_VALUE;
++            LensCandidate mainCandidate = null;
++            float mainDistance = Float.MAX_VALUE;
++
++            for (int i = 0; i < ids.length; i++) {
++                CameraCharacteristics c = cameraManager.getCameraCharacteristics(ids[i]);
++                Integer facing = c.get(CameraCharacteristics.LENS_FACING);
++                if (facing == null || facing.intValue() != CameraCharacteristics.LENS_FACING_BACK) continue;
++
++                float equivalent = calculateEquivalentFocal(c);
++                boolean logical = hasLogicalMultiCameraCapability(c);
++                Range<Float> range = readZoomRange(c);
++                LensCandidate candidate = new LensCandidate(ids[i], equivalent, logical,
++                        range.getLower().floatValue(), range.getUpper().floatValue());
++                backLensCandidates.add(candidate);
++
++                int score = cameraScore(c);
++                if (score > bestScore) {
++                    bestScore = score;
++                    preferredBackCameraId = ids[i];
++                }
++
++                if (!Float.isNaN(equivalent)) {
++                    float distance = Math.abs(equivalent - 24f);
++                    if (logical) distance += 1.5f;
++                    if (distance < mainDistance) {
++                        mainDistance = distance;
++                        mainCandidate = candidate;
+                     }
+                 }
+             }
+-            if (Build.VERSION.SDK_INT >= 30) {
+-                Range<Float> range = c.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE);
+-                if (range != null) {
+-                    if (range.getLower().floatValue() < 1f) score += 50;
+-                    score += Math.min(40, Math.round(range.getUpper().floatValue()));
+-                }
++
++            if (mainCandidate != null && mainCandidate.equivalentFocal > 0f) {
++                mainEquivalentFocal = mainCandidate.equivalentFocal;
+             }
+-            if (score > bestScore) {
++
++            float minimum = Float.MAX_VALUE;
++            float maximum = 0f;
++            for (int i = 0; i < backLensCandidates.size(); i++) {
++                LensCandidate candidate = backLensCandidates.get(i);
++                float optical = candidate.opticalRatio(mainEquivalentFocal);
++                minimum = Math.min(minimum, optical * candidate.minZoom);
++                maximum = Math.max(maximum, optical * candidate.maxZoom);
++            }
++            if (minimum != Float.MAX_VALUE) globalMinZoomRatio = Math.max(0.1f, minimum);
++            if (maximum > 0f) globalMaxZoomRatio = Math.max(1f, maximum);
++        } catch (Exception ignored) {
++            backLensCandidates.clear();
++            preferredBackCameraId = null;
++            globalMinZoomRatio = 1f;
++            globalMaxZoomRatio = 1f;
++        }
++    }
++
++    private LensCandidate chooseLensCandidate(float target) {
++        LensCandidate preferred = findLensCandidate(preferredBackCameraId);
++        if (preferred != null && preferred.supports(target, mainEquivalentFocal)) {
++            return preferred;
++        }
++
++        LensCandidate best = null;
++        double bestScore = Double.MAX_VALUE;
++        for (int i = 0; i < backLensCandidates.size(); i++) {
++            LensCandidate candidate = backLensCandidates.get(i);
++            float optical = Math.max(0.1f, candidate.opticalRatio(mainEquivalentFocal));
++            float effectiveMin = optical * candidate.minZoom;
++            float effectiveMax = optical * candidate.maxZoom;
++            float bounded = clamp(target, effectiveMin, effectiveMax);
++            double distance = Math.abs(Math.log(Math.max(0.01f, target) / Math.max(0.01f, bounded)));
++            double opticalDistance = Math.abs(Math.log(Math.max(0.01f, target) / optical)) * 0.05d;
++            double score = distance + opticalDistance + (candidate.logical ? 0.01d : 0.03d);
++            if (score < bestScore) {
+                 bestScore = score;
+-                bestId = ids[i];
++                best = candidate;
+             }
+         }
+-        return bestId;
++        return best;
++    }
++
++    private LensCandidate findLensCandidate(String id) {
++        if (id == null) return null;
++        for (int i = 0; i < backLensCandidates.size(); i++) {
++            LensCandidate candidate = backLensCandidates.get(i);
++            if (id.equals(candidate.id)) retur

@@ -1,0 +1,145 @@
+--- a/app/src/main/java/kr/co/vintagecolor/camera/CameraController.java
++++ b/app/src/main/java/kr/co/vintagecolor/camera/CameraController.java
+@@ -27,6 +27,7 @@
+ import android.os.HandlerThread;
+ import android.util.Range;
+ import android.util.Size;
++import android.util.SizeF;
+ import android.view.Surface;
+ import android.view.TextureView;
+ 
+@@ -43,6 +44,41 @@
+  * Galaxy S24 Ultra의 논리 카메라 줌 범위를 사용해 물리 렌즈 전환을 기기에 맡깁니다.
+  */
+ public final class CameraController {
++    /**
++     * 기기가 공개하는 카메라 ID와 초점거리를 기준으로 렌즈 후보를 보관합니다.
++     * 논리 카메라가 목표 배율을 지원하면 논리 카메라를 우선하여 전환 끊김을 줄입니다.
++     */
++    private static final class LensCandidate {
++        final String id;
++        final float equivalentFocal;
++        final boolean logical;
++        final float minZoom;
++        final float maxZoom;
++
++        LensCandidate(String id, float equivalentFocal, boolean logical,
++                float minZoom, float maxZoom) {
++            this.id = id;
++            this.equivalentFocal = equivalentFocal;
++            this.logical = logical;
++            this.minZoom = minZoom;
++            this.maxZoom = maxZoom;
++        }
++
++        float opticalRatio(float mainEquivalentFocal) {
++            if (Float.isNaN(equivalentFocal) || equivalentFocal <= 0f || mainEquivalentFocal <= 0f) {
++                return 1f;
++            }
++            return equivalentFocal / mainEquivalentFocal;
++        }
++
++        boolean supports(float displayZoom, float mainEquivalentFocal) {
++            float optical = opticalRatio(mainEquivalentFocal);
++            float minimum = optical * minZoom;
++            float maximum = optical * maxZoom;
++            return displayZoom >= minimum - 0.04f && displayZoom <= maximum + 0.08f;
++        }
++    }
++
+     public interface Listener {
+         void onCameraReady(float minZoom, float maxZoom, boolean flashAvailable, boolean frontCamera);
+         void onPhotoCaptured(Bitmap bitmap, Date date);
+@@ -77,11 +113,22 @@
+     private Size previewSize;
+     private Size captureSize;
+ 
++    // S24 Ultra를 포함한 멀티 카메라 기기용 동적 렌즈 매핑 정보입니다.
++    private final List<LensCandidate> backLensCandidates = new ArrayList<LensCandidate>();
++    private String preferredBackCameraId;
++    private String requestedBackCameraId;
++    private float mainEquivalentFocal = 24f;
++    private float selectedOpticalRatio = 1f;
++    private float requestedDisplayZoom = 1f;
++    private float globalMinZoomRatio = 1f;
++    private float globalMaxZoomRatio = 1f;
++
+     public CameraController(Activity activity, TextureView textureView, Listener listener) {
+         this.activity = activity;
+         this.textureView = textureView;
+         this.listener = listener;
+         this.cameraManager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
++        scanBackLensCandidates();
+         this.textureView.setSurfaceTextureListener(surfaceListener);
+     }
+ 
+@@ -108,6 +155,9 @@
+ 
+     public void switchCamera() {
+         useFrontCamera = !useFrontCamera;
++        requestedBackCameraId = null;
++        requestedDisplayZoom = 1f;
++        selectedOpticalRatio = 1f;
+         zoomRatio = 1f;
+         closeCamera();
+         if (backgroundHandler == null) startBackgroundThread();
+@@ -116,14 +166,48 @@
+ 
+     public boolean isFrontCamera() { return useFrontCamera; }
+ 
++    /**
++     * 화면에 표시되는 목표 배율을 설정합니다.
++     * 먼저 광범위 줌을 지원하는 논리 카메라를 사용하고, 필요할 때만 별도 카메라 ID로 전환합니다.
++     */
+     public void setZoom(float requested) {
+-        zoomRatio = clamp(requested, minZoomRatio, maxZoomRatio);
+-        applyRepeatingRequest();
++        requestedDisplayZoom = Math.max(0.1f, requested);
++        if (useFrontCamera) {
++            zoomRatio = clamp(requestedDisplayZoom, minZoomRatio, maxZoomRatio);
++            applyRepeatingRequest();
++            return;
++        }
++
++        LensCandidate candidate = chooseLensCandidate(requestedDisplayZoom);
++        if (candidate == null) {
++            zoomRatio = clamp(requestedDisplayZoom, minZoomRatio, maxZoomRatio);
++            applyRepeatingRequest();
++            return;
++        }
++
++        float optical = Math.max(0.1f, candidate.opticalRatio(mainEquivalentFocal));
++        float localZoom = clamp(requestedDisplayZoom / optical, candidate.minZoom, candidate.maxZoom);
++        selectedOpticalRatio = optical;
++        zoomRatio = localZoom;
++
++        if (cameraId == null || !candidate.id.equals(cameraId)) {
++            requestedBackCameraId = candidate.id;
++            closeCamera();
++            if (backgroundHandler == null) startBackgroundThread();
++            if (textureView.isAvailable()) openCamera();
++        } else {
++            applyRepeatingRequest();
++        }
++    }
++
++    public boolean isLensTargetAvailable(float target) {
++        if (useFrontCamera) return target >= minZoomRatio && target <= maxZoomRatio;
++        return target >= globalMinZoomRatio - 0.04f && target <= globalMaxZoomRatio + 0.08f;
+     }
+ 
+-    public float getZoomRatio() { return zoomRatio; }
+-    public float getMinZoomRatio() { return minZoomRatio; }
+-    public float getMaxZoomRatio() { return maxZoomRatio; }
++    public float getZoomRatio() { return requestedDisplayZoom; }
++    public float getMinZoomRatio() { return useFrontCamera ? minZoomRatio : globalMinZoomRatio; }
++    public float getMaxZoomRatio() { return useFrontCamera ? maxZoomRatio : globalMaxZoomRatio; }
+ 
+     public void setFlashMode(int mode) {
+         flashMode = Math.max(0, Math.min(2, mode));
+@@ -252,6 +336,11 @@
+     }
+ 
+     private String chooseCameraId(boolean front) throws CameraAccessException {
++        if (!front) {
++            if (requestedBackCameraId != null) return requested

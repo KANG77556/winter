@@ -1,0 +1,114 @@
+n candidate;
++        }
++        return null;
++    }
++
++    private int cameraScore(CameraCharacteristics c) {
++        int score = 0;
++        if (hasLogicalMultiCameraCapability(c)) score += 100;
++        Range<Float> range = readZoomRange(c);
++        if (range.getLower().floatValue() < 1f) score += 50;
++        score += Math.min(80, Math.round(range.getUpper().floatValue()));
++        return score;
++    }
++
++    private boolean hasLogicalMultiCameraCapability(CameraCharacteristics c) {
++        int[] caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
++        if (caps == null) return false;
++        for (int i = 0; i < caps.length; i++) {
++            if (Build.VERSION.SDK_INT >= 28 &&
++                    caps[i] == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    private Range<Float> readZoomRange(CameraCharacteristics c) {
++        if (Build.VERSION.SDK_INT >= 30) {
++            Range<Float> ratio = c.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE);
++            if (ratio != null) return ratio;
++        }
++        Float digital = c.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
++        return new Range<Float>(1f, digital == null ? 1f : Math.max(1f, digital.floatValue()));
++    }
++
++    private float calculateEquivalentFocal(CameraCharacteristics c) {
++        float[] focals = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
++        SizeF sensor = c.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
++        if (focals == null || focals.length == 0 || sensor == null || sensor.getWidth() <= 0f) {
++            return Float.NaN;
++        }
++        float shortest = focals[0];
++        for (int i = 1; i < focals.length; i++) shortest = Math.min(shortest, focals[i]);
++        return shortest * 36f / sensor.getWidth();
+     }
+ 
+     private void readCharacteristics() {
+@@ -308,7 +518,15 @@
+             minZoomRatio = 1f;
+             maxZoomRatio = digital == null ? 1f : Math.max(1f, digital.floatValue());
+         }
+-        zoomRatio = clamp(zoomRatio, minZoomRatio, maxZoomRatio);
++        LensCandidate selected = findLensCandidate(cameraId);
++        if (!useFrontCamera && selected != null) {
++            selectedOpticalRatio = Math.max(0.1f, selected.opticalRatio(mainEquivalentFocal));
++            zoomRatio = clamp(requestedDisplayZoom / selectedOpticalRatio, minZoomRatio, maxZoomRatio);
++        } else {
++            selectedOpticalRatio = 1f;
++            requestedDisplayZoom = clamp(requestedDisplayZoom, minZoomRatio, maxZoomRatio);
++            zoomRatio = requestedDisplayZoom;
++        }
+ 
+         StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+         if (map == null) throw new IllegalStateException("카메라 출력 정보를 읽지 못했습니다.");
+@@ -386,8 +604,10 @@
+                         configureTransform(textureView.getWidth(), textureView.getHeight());
+                         activity.runOnUiThread(new Runnable() {
+                             @Override public void run() {
+-                                listener.onCameraReady(minZoomRatio, maxZoomRatio,
+-                                        flashAvailable, lensFacing == CameraCharacteristics.LENS_FACING_FRONT);
++                                boolean front = lensFacing == CameraCharacteristics.LENS_FACING_FRONT;
++                                listener.onCameraReady(front ? minZoomRatio : globalMinZoomRatio,
++                                        front ? maxZoomRatio : globalMaxZoomRatio,
++                                        flashAvailable, front);
+                             }
+                         });
+                     } catch (Exception error) {
+--- a/app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java
++++ b/app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java
+@@ -564,10 +564,14 @@
+     private View.OnClickListener zoomClick(final float ratio) {
+         return new View.OnClickListener() {
+             @Override public void onClick(View view) {
+-                float actual = Math.max(cameraMinZoom, Math.min(cameraMaxZoom, ratio));
+-                cameraController.setZoom(actual);
+-                zoomStatusView.setText(String.format(Locale.US, "%.1f×", actual));
+-                highlightZoom(actual);
++                if (!cameraController.isLensTargetAvailable(ratio)) {
++                    Toast.makeText(MainActivity.this, "이 배율은 현재 카메라에서 지원되지 않습니다.",
++                            Toast.LENGTH_SHORT).show();
++                    return;
++                }
++                cameraController.setZoom(ratio);
++                zoomStatusView.setText(String.format(Locale.US, "%.1f×", ratio));
++                highlightZoom(ratio);
+             }
+         };
+     }
+@@ -657,13 +661,15 @@
+         statusView.setText(frontCamera ? "전면 카메라 · 화면을 눌러 초점" : "화면을 눌러 초점");
+         flashButton.setEnabled(flashAvailable);
+         flashButton.setAlpha(flashAvailable ? 1f : 0.45f);
+-        zoom06Button.setEnabled(minZoom <= 0.65f && !frontCamera);
+-        zoom3Button.setEnabled(maxZoom >= 2.8f && !frontCamera);
+-        zoom5Button.setEnabled(maxZoom >= 4.8f && !frontCamera);
++        zoom06Button.setEnabled(cameraController.isLensTargetAvailable(0.6f) && !frontCamera);
++        zoom3Button.setEnabled(cameraController.isLensTargetAvailable(3f) && !frontCamera);
++        zoom5Button.setEnabled(cameraController.isLensTargetAvailable(5f) && !frontCamera);
+         zoom06Button.setAlpha(zoom06Button.isEnabled() ? 1f : 0.35f);
+         zoom3Button.setAlpha(zoom3Button.isEnabled() ? 1f : 0.35f);
+         zoom5Button.setAlpha(zoom5Button.isEnabled() ? 1f : 0.35f);
+-        highlightZoom(1f);
++        float currentZoom = cameraController.getZoomRatio();
++        zoomStatusView.setTex

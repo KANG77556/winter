@@ -1,0 +1,104 @@
+t(String.format(Locale.US, "%.1f×", currentZoom));
++        highlightZoom(currentZoom);
+         updateLivePreviewFilter();
+     }
+ 
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -7,11 +7,11 @@
+     compileSdk = 36
+ 
+     defaultConfig {
+-        applicationId = "kr.co.vintagecolor.camera.s24diag"
++        applicationId = "kr.co.vintagecolor.camera.s24final"
+         minSdk = 31
+         targetSdk = 36
+-        versionCode = 7
+-        versionName = "3.1.0"
++        versionCode = 8
++        versionName = "3.2.0"
+     }
+ 
+     buildTypes {
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -6,7 +6,7 @@
+     <application
+         android:allowBackup="true"
+         android:icon="@drawable/ic_launcher"
+-        android:label="빈티지 카메라 3.1 진단"
++        android:label="빈티지 컬러 카메라 S24"
+         android:theme="@android:style/Theme.Material.NoActionBar"
+         android:usesCleartextTraffic="false">
+         <activity
+--- a/README_KO.md
++++ b/README_KO.md
+@@ -1,35 +1,15 @@
+-# 빈티지 컬러 카메라 3.0
++# 빈티지 컬러 카메라 S24 3.2
+ 
+-Galaxy S24 Ultra를 주 검토 기기로 삼은 Camera2 기반 빈티지 카메라 앱입니다.
+-사진과 레시피는 외부 서버로 전송하지 않고 기기 내부에서만 처리합니다.
++Galaxy S24 Ultra를 우선 대상으로 한 최종 설치판입니다.
+ 
+-## 주요 기능
++## 핵심 기능
+ 
+-- Camera2 실시간 카메라 미리보기
+-- 0.6×, 1×, 3×, 5× 줌 버튼
+-- 기기 논리 카메라의 자동 물리 렌즈 전환 활용
+-- 전면·후면 카메라 전환
+-- 터치 초점과 초점 표시
+-- 플래시 끔·자동·켬
+-- 노출 보정
+-- 격자선
+-- 12개 빈티지 색감 프리셋
+-- 필터 강도, 입자, 비네트, 빛샘
+-- 4:3, 16:9, 1:1, 원본 비율
+-- 날짜 스탬프와 36컷 필름 번호
+-- 갤러리 사진 불러오기
+-- 원본 비교, 저장, 공유
+-- 사용자 필름 레시피 저장
++- Camera2 실시간 미리보기
++- 기기 공개 정보 기반 0.6x, 1x, 3x, 5x 자동 렌즈 매핑
++- 논리 멀티 카메라 우선 사용 및 별도 카메라 ID 자동 대체
++- 터치 초점, 노출, 플래시, 격자선
++- 12개 빈티지 색감과 필름 효과
++- 촬영 후 비교, 저장, 공유
++- S24 카메라 진단 보고서
+ 
+-## Android Studio에서 열기
+-
+-1. 이 폴더를 Android Studio에서 엽니다.
+-2. Android SDK 36을 설치합니다.
+-3. Gradle 동기화 후 `app` 구성을 실행합니다.
+-4. 카메라 기능은 에뮬레이터보다 실제 휴대전화에서 시험하는 것을 권장합니다.
+-
+-## 주의 사항
+-
+-- 제조사 색감과 필름에서 영감을 받은 비공식 독자 프리셋입니다.
+-- 0.6×, 3×, 5× 버튼은 기기가 제공하는 줌 범위에 따라 자동으로 활성화됩니다.
+-- Galaxy S24 Ultra에서는 논리 카메라 줌을 사용하므로 배율 변화에 따른 물리 렌즈 전환을 카메라 시스템이 처리합니다.
++인터넷 권한 없이 사진을 기기 안에서 처리합니다.
+--- a/CHANGELOG_KO.md
++++ b/CHANGELOG_KO.md
+@@ -1,13 +1,9 @@
+ # 변경 내역
+ 
+-## 3.0.0
++## 3.2.0
+ 
+-- 편집기 중심 첫 화면을 실시간 카메라 뷰파인더로 전면 교체
+-- Camera2 직접 촬영 추가
+-- 0.6×·1×·3×·5× 줌 버튼 추가
+-- 전면·후면 카메라 전환 추가
+-- 터치 초점, 격자선, 플래시, 노출 보정 추가
+-- 실시간 색상 행렬 미리보기 추가
+-- 촬영 후 원본 비교·프리셋 재조정·저장·공유 흐름 개선
+-- 사진 비율과 사용자 레시피 기능 유지
+-- 카메라 권한 처리와 카메라 생명주기 정리
++- 후면 카메라 ID, 초점거리, 센서 크기, 줌 범위 자동 분석
++- 논리 카메라가 목표 배율을 지원할 때 끊김이 적은 자동 렌즈 전환 사용
++- 논리 카메라 지원 범위가 부족할 때 별도 물리 카메라 후보 자동 선택
++- 0.6x, 1x, 3x, 5x 버튼 활성화 판단 개선
++- 기존 앱과 충돌하지 않는 최종 패키지 ID 적용
