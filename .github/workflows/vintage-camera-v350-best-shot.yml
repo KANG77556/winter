@@ -109,15 +109,13 @@ jobs:
         shell: bash
         run: |
           PROJECT_DIR="restored-source/VintageColorCamera-v3.0.0-source"
-          base64 --decode vintage-camera-app/patches/v350/v350-best-shot.patch.gz.b64 \
-            | gzip -dc > /tmp/v350-best-shot.patch
-          cd "$PROJECT_DIR"
-          patch -p1 < /tmp/v350-best-shot.patch
-          test -f app/src/main/java/kr/co/vintagecolor/camera/PhotoQualityEngine.java
-          grep -q 'versionCode = 13' app/build.gradle.kts
-          grep -q 'versionName = "3.5.0"' app/build.gradle.kts
-          grep -q 'showPhotoQualityDetails' app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java
-          grep -q '이번 촬영 최고' app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java
+          python3 vintage-camera-app/patches/v350/apply_v350_best_shot.py \
+            "$PROJECT_DIR" "vintage-camera-app/patches/v350"
+          test -f "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/PhotoQualityEngine.java"
+          grep -q 'versionCode = 13' "$PROJECT_DIR/app/build.gradle.kts"
+          grep -q 'versionName = "3.5.0"' "$PROJECT_DIR/app/build.gradle.kts"
+          grep -q 'showPhotoQualityDetails' "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java"
+          grep -q '이번 촬영 최고' "$PROJECT_DIR/app/src/main/java/kr/co/vintagecolor/camera/MainActivity.java"
 
       - name: Build stable APK
         working-directory: restored-source/VintageColorCamera-v3.0.0-source
