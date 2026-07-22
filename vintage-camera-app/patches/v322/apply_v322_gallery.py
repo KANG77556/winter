@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import base64
+import gzip
 import shutil
 import sys
 
@@ -15,11 +17,16 @@ gradle = project / 'app/build.gradle.kts'
 changelog = project / 'CHANGELOG_KO.md'
 readme = project / 'README_KO.md'
 
-for name in ('PhotoGalleryActivity.java', 'ZoomImageView.java'):
-    source = patch_dir / name
-    if not source.exists():
-        raise SystemExit(f'missing patch file: {source}')
-    shutil.copyfile(source, java_dir / name)
+gallery_archive = patch_dir / 'PhotoGalleryActivity.java.gz.b64'
+zoom_source = patch_dir / 'ZoomImageView.java'
+if not gallery_archive.exists() or not zoom_source.exists():
+    raise SystemExit('gallery patch source is incomplete')
+try:
+    gallery_bytes = gzip.decompress(base64.b64decode(gallery_archive.read_text(encoding='utf-8')))
+except Exception as error:
+    raise SystemExit(f'gallery source decode failed: {error}')
+(java_dir / 'PhotoGalleryActivity.java').write_bytes(gallery_bytes)
+shutil.copyfile(zoom_source, java_dir / 'ZoomImageView.java')
 
 text = main.read_text(encoding='utf-8')
 
