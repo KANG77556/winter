@@ -18,6 +18,7 @@ import android.view.ViewGroup
 import android.widget.*
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -196,7 +197,10 @@ class MainActivity : Activity() {
 
     private fun renderPdfPage() {
         val renderer = pdfRenderer ?: return
-        if (renderer.pageCount == 0) return showCenteredMessage("내용이 없는 PDF입니다.")
+        if (renderer.pageCount == 0) {
+            showCenteredMessage("내용이 없는 PDF입니다.")
+            return
+        }
         pdfPageIndex = pdfPageIndex.coerceIn(0, renderer.pageCount - 1)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -345,7 +349,10 @@ class MainActivity : Activity() {
         content.removeAllViews()
         content.addView(box, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         mediaPlayer = MediaPlayer.create(this, uri)
-        if (mediaPlayer == null) return showCenteredMessage("이 기기에서 지원하지 않는 음원 형식입니다.")
+        if (mediaPlayer == null) {
+            showCenteredMessage("이 기기에서 지원하지 않는 음원 형식입니다.")
+            return
+        }
         play.setOnClickListener {
             val player = mediaPlayer ?: return@setOnClickListener
             if (player.isPlaying) { player.pause(); play.text = "재생" } else { player.start(); play.text = "일시정지" }
@@ -424,7 +431,10 @@ class MainActivity : Activity() {
 
     private fun showRecent() {
         val items = recentStore.load()
-        if (items.isEmpty()) return AlertDialog.Builder(this).setTitle("최근 파일").setMessage("최근에 연 파일이 없습니다.").setPositiveButton("확인", null).show()
+        if (items.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("최근 파일").setMessage("최근에 연 파일이 없습니다.").setPositiveButton("확인", null).show()
+            return
+        }
         AlertDialog.Builder(this)
             .setTitle("최근 파일")
             .setItems(items.map { "${it.name}\n${it.type}" }.toTypedArray()) { _, which -> openUri(items[which].uri) }
