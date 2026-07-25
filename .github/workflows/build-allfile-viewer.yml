@@ -3,6 +3,8 @@ name: Build ModuBogi APK
 on:
   push:
     branches: ["allfile-viewer-apk"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
