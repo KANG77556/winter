@@ -48,12 +48,12 @@ jobs:
           retention-days: 7
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk ModuBogi-0.1.0-debug.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk ModuBogi-0.2.0-debug.apk
         working-directory: allfile-viewer
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: ModuBogi-APK
-          path: allfile-viewer/ModuBogi-0.1.0-debug.apk
+          path: allfile-viewer/ModuBogi-0.2.0-debug.apk
           retention-days: 30
