@@ -11,8 +11,8 @@ android {
         applicationId = "kr.co.modubogi"
         minSdk = 28
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
     }
 
     buildTypes {
@@ -29,4 +29,20 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt"
+            )
+        }
+    }
+}
+
+dependencies {
+    implementation("org.apache.poi:poi:5.5.1")
 }
