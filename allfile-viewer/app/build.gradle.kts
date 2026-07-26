@@ -11,8 +11,8 @@ android {
         applicationId = "kr.co.modubogi"
         minSdk = 28
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.5.0"
     }
 
     buildTypes {
@@ -45,4 +45,5 @@ android {
 
 dependencies {
     implementation("org.apache.poi:poi:5.5.1")
+    implementation("kr.dogfoot:hwplib:1.1.10")
 }
