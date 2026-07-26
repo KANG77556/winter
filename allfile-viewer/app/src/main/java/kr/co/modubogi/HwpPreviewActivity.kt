@@ -3,13 +3,13 @@ package kr.co.modubogi
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.text.TextUtils
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.widget.Button
@@ -20,13 +20,16 @@ import android.widget.ScrollView
 import android.widget.TextView
 import kotlin.concurrent.thread
 
-/** HWP 내장 미리보기를 표시하는 읽기 전용 1차 뷰어. */
+/** HWP 첫 페이지 미리보기와 본문 전체를 표시하는 읽기 전용 뷰어. */
 class HwpPreviewActivity : Activity() {
     private val blue = Color.rgb(21, 87, 176)
     private lateinit var content: FrameLayout
     private lateinit var status: TextView
     private var previewBitmap: Bitmap? = null
     private var previewText: String? = null
+    private var fullPages: List<String> = emptyList()
+    private var fullPageIndex = 0
+    private var sectionCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,11 +37,7 @@ class HwpPreviewActivity : Activity() {
         window.navigationBarColor = Color.WHITE
         val uri = intent?.data
         buildUi(uri)
-        if (uri == null) {
-            showMessage("HWP 파일 주소가 없습니다.")
-        } else {
-            loadPreview(uri)
-        }
+        if (uri == null) showMessage("HWP 파일 주소가 없습니다.") else loadDocument(uri)
     }
 
     private fun buildUi(uri: Uri?) {
@@ -85,13 +84,14 @@ class HwpPreviewActivity : Activity() {
         }, LinearLayout.LayoutParams(0, dp(52), 1f))
 
         status = TextView(this).apply {
-            text = "HWP 내장 미리보기를 준비하고 있습니다…"
+            text = "HWP 전체 내용을 분석하고 있습니다…"
             textSize = 14f
             setTextColor(Color.DKGRAY)
             setBackgroundColor(Color.rgb(238, 245, 255))
             setPadding(dp(16), dp(10), dp(16), dp(10))
+            maxLines = 2
         }
-        content = FrameLayout(this).apply { setBackgroundColor(Color.rgb(245, 247, 250)) }
+        content = FrameLayout(this).apply { setBackgroundColor(Color.rgb(231, 233, 237)) }
 
         root.addView(toolbar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(66)))
         root.addView(status, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -100,34 +100,39 @@ class HwpPreviewActivity : Activity() {
         root.requestApplyInsets()
     }
 
-    private fun loadPreview(uri: Uri) {
+    private fun loadDocument(uri: Uri) {
         showLoading()
-        thread(name = "hwp-preview") {
-            runCatching { HwpPreviewExtractor.extract(contentResolver, uri) }
-                .onSuccess { result ->
-                    runOnUiThread {
-                        previewBitmap = result.image
-                        previewText = result.previewText
-                        when {
-                            result.image != null -> showImageTab()
-                            !result.previewText.isNullOrBlank() -> showTextTab()
-                            else -> showMessage(
-                                "이 HWP 파일에는 앱에서 읽을 수 있는 내장 미리보기가 없습니다.\n\n" +
-                                    "원본 파일은 변경되지 않았습니다. 전체 페이지 조판 엔진은 다음 단계에서 추가합니다."
-                            )
+        thread(name = "hwp-full-document") {
+            val previewResult = runCatching { HwpPreviewExtractor.extract(contentResolver, uri) }.getOrNull()
+            val fullResult = runCatching { HwpFullContentExtractor.extract(contentResolver, uri) }
+
+            runOnUiThread {
+                previewBitmap = previewResult?.image
+                previewText = previewResult?.previewText
+                fullResult.onSuccess { result ->
+                    fullPages = result.pages
+                    sectionCount = result.sectionCount
+                    fullPageIndex = 0
+                    showFullContentPage()
+                }.onFailure { error ->
+                    when {
+                        previewBitmap != null -> {
+                            status.text = "HWP 전체 내용 분석 실패 · 첫 페이지 미리보기 표시 · 읽기 전용"
+                            showImageTab()
                         }
-                    }
-                }
-                .onFailure { error ->
-                    runOnUiThread {
-                        status.text = "HWP 미리보기를 읽지 못했습니다. · 읽기 전용"
-                        showMessage(
-                            "이 파일은 구형 HWP이거나 암호·배포용 문서일 수 있습니다.\n\n" +
-                                "${error.javaClass.simpleName}: ${error.message ?: "미리보기 정보 없음"}\n\n" +
-                                "원본 파일은 변경되지 않았습니다."
+                        !previewText.isNullOrBlank() -> {
+                            fullPages = listOf(previewText!!)
+                            status.text = "HWP 미리보기 텍스트 표시 · 읽기 전용"
+                            showFullContentPage()
+                        }
+                        else -> showMessage(
+                            "HWP 문서 내용을 읽지 못했습니다.\n\n" +
+                                "${error.javaClass.simpleName}: ${error.message ?: "문서 분석 실패"}\n\n" +
+                                "암호 또는 손상된 문서일 수 있습니다. 원본 파일은 변경되지 않았습니다."
                         )
                     }
                 }
+            }
         }
     }
 
@@ -138,7 +143,7 @@ class HwpPreviewActivity : Activity() {
             gravity = Gravity.CENTER
             addView(ProgressBar(this@HwpPreviewActivity))
             addView(TextView(this@HwpPreviewActivity).apply {
-                text = "HWP 내부의 미리보기 이미지와 텍스트를 읽고 있습니다."
+                text = "HWP 본문·표 안의 텍스트를 모두 읽고 있습니다."
                 textSize = 16f
                 setTextColor(Color.DKGRAY)
                 gravity = Gravity.CENTER
@@ -147,79 +152,117 @@ class HwpPreviewActivity : Activity() {
         }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
-    private fun showImageTab() {
-        status.text = "HWP 내장 미리보기 · 첫 페이지 중심 · 읽기 전용"
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(45, 45, 45))
-        }
-        val controls = LinearLayout(this).apply {
+    private fun createTabs(showingFull: Boolean): LinearLayout {
+        return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(6), dp(8), dp(6))
             setBackgroundColor(Color.WHITE)
+            addView(Button(this@HwpPreviewActivity).apply {
+                text = "첫 페이지"
+                isAllCaps = false
+                isEnabled = previewBitmap != null && showingFull
+                setOnClickListener { showImageTab() }
+            }, LinearLayout.LayoutParams(0, dp(50), 1f))
+            addView(Button(this@HwpPreviewActivity).apply {
+                text = "전체 내용"
+                isAllCaps = false
+                isEnabled = !showingFull && fullPages.isNotEmpty()
+                setOnClickListener { showFullContentPage() }
+            }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(6) })
         }
-        controls.addView(Button(this).apply {
-            text = "문서 미리보기"
-            isAllCaps = false
-            isEnabled = false
-        }, LinearLayout.LayoutParams(0, dp(50), 1f))
-        controls.addView(Button(this).apply {
-            text = "미리보기 텍스트"
-            isAllCaps = false
-            isEnabled = !previewText.isNullOrBlank()
-            setOnClickListener { showTextTab() }
-        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(6) })
+    }
 
+    private fun showImageTab() {
+        status.text = "HWP 내장 첫 페이지 미리보기 · 읽기 전용"
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(45, 45, 45))
+        }
         val image = ZoomableImageView(this).apply {
             setBackgroundColor(Color.rgb(45, 45, 45))
             previewBitmap?.let(::setImageBitmap)
         }
-        root.addView(controls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(62)))
+        root.addView(createTabs(showingFull = false), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(62)))
         root.addView(image, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         content.removeAllViews()
         content.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
-    private fun showTextTab() {
-        status.text = "HWP 내장 미리보기 텍스트 · 읽기 전용"
+    private fun showFullContentPage() {
+        if (fullPages.isEmpty()) {
+            showMessage("표시할 전체 내용이 없습니다.")
+            return
+        }
+        fullPageIndex = fullPageIndex.coerceIn(0, fullPages.lastIndex)
+        status.text = "HWP 전체 내용 · ${fullPageIndex + 1}/${fullPages.size} · 구역 ${sectionCount.coerceAtLeast(1)}개 · 읽기 전용"
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(231, 233, 237))
         }
-        val controls = LinearLayout(this).apply {
+        root.addView(createTabs(showingFull = true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(62)))
+
+        val pageText = TextView(this).apply {
+            text = fullPages[fullPageIndex]
+            textSize = 16f
+            setTextColor(Color.rgb(28, 28, 28))
+            setTextIsSelectable(true)
+            setLineSpacing(0f, 1.25f)
+            setPadding(dp(24), dp(26), dp(24), dp(34))
+            background = GradientDrawable().apply {
+                setColor(Color.WHITE)
+                setStroke(dp(1), Color.rgb(205, 208, 214))
+            }
+        }
+        val pageWrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            addView(pageText, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        val scroll = ScrollView(this).apply { addView(pageWrap) }
+        root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        val navigation = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(8), dp(6), dp(8), dp(6))
             setBackgroundColor(Color.WHITE)
         }
-        controls.addView(Button(this).apply {
-            text = "문서 미리보기"
+        navigation.addView(Button(this).apply {
+            text = "이전"
             isAllCaps = false
-            isEnabled = previewBitmap != null
-            setOnClickListener { showImageTab() }
+            isEnabled = fullPageIndex > 0
+            setOnClickListener { fullPageIndex--; showFullContentPage() }
         }, LinearLayout.LayoutParams(0, dp(50), 1f))
-        controls.addView(Button(this).apply {
-            text = "미리보기 텍스트"
-            isAllCaps = false
-            isEnabled = false
-        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(6) })
-
-        val text = TextView(this).apply {
-            this.text = previewText ?: "미리보기 텍스트가 없습니다."
+        navigation.addView(TextView(this).apply {
+            text = "${fullPageIndex + 1} / ${fullPages.size}"
             textSize = 16f
-            setTextColor(Color.rgb(30, 30, 30))
-            setTextIsSelectable(true)
-            setPadding(dp(18), dp(18), dp(18), dp(28))
-        }
-        val scroll = ScrollView(this).apply { addView(text) }
-        root.addView(controls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(62)))
-        root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            setTextColor(Color.DKGRAY)
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(0, dp(50), 1f))
+        navigation.addView(Button(this).apply {
+            text = "다음"
+            isAllCaps = false
+            isEnabled = fullPageIndex < fullPages.lastIndex
+            setOnClickListener { fullPageIndex++; showFullContentPage() }
+        }, LinearLayout.LayoutParams(0, dp(50), 1f))
+        root.addView(navigation, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(62)))
+
+        root.addView(TextView(this).apply {
+            text = "※ 전체 내용 페이지는 모바일 열람용으로 재구성됩니다. 원본의 정확한 페이지 경계·표·도형 위치는 한컴 조판과 다를 수 있습니다."
+            textSize = 11f
+            setTextColor(Color.GRAY)
+            setPadding(dp(12), dp(4), dp(12), dp(8))
+            setBackgroundColor(Color.WHITE)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
         content.removeAllViews()
         content.addView(root, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
     private fun showMessage(message: String) {
+        status.text = "HWP 문서를 표시할 수 없습니다. · 읽기 전용"
         content.removeAllViews()
         content.addView(TextView(this).apply {
             text = message
